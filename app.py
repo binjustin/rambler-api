@@ -4,6 +4,7 @@ import email
 from email.header import decode_header
 import os
 import re
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -71,12 +72,26 @@ def read_latest_email(mail, search_query=None):
 
 # Hàm trích xuất mã xác minh từ nội dung email
 def extract_verification_code(body):
-    # Sử dụng regex để tìm chuỗi 6 chữ số
+    # Sử dụng BeautifulSoup để phân tích HTML
+    soup = BeautifulSoup(body, 'html.parser')
+    
+    # Tìm đoạn văn bản chứa mã xác minh
+    verification_text = soup.find(string=re.compile("To complete your request, enter the following verification code:"))
+    
+    if verification_text:
+        # Tìm thẻ p tiếp theo chứa mã
+        code_tag = verification_text.find_next('p')
+        if code_tag:
+            # Lấy mã từ thẻ p
+            code = code_tag.text.strip()
+            return code
+    
+    # Nếu không tìm thấy theo cách trên, thử tìm bằng regex
     match = re.search(r'\b\d{6}\b', body)
     if match:
         return match.group(0)
+    
     return None
-
 # Endpoint để đọc email và trả về mã xác minh
 @app.route('/get_verification_code', methods=['POST'])
 def get_verification_code():
@@ -98,8 +113,7 @@ def get_verification_code():
             if code:
                 return jsonify({
                     "verification_code": code,
-                    "latest_email": latest_email["subject"],
-                    "email_body": latest_email["body"]
+                    "latest_email": latest_email["subject"]
                 })
             else:
                 return jsonify({"message": "No verification code found."}), 404
@@ -112,3 +126,4 @@ def get_verification_code():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
