@@ -3,6 +3,7 @@ import imaplib
 import email
 from email.header import decode_header
 import os
+import re
 
 app = Flask(__name__)
 
@@ -10,7 +11,10 @@ app = Flask(__name__)
 def connect_to_rambler(username, password):
     imap_server = "imap.rambler.ru"
     mail = imaplib.IMAP4_SSL(imap_server)
-    mail.login(username, password)
+    try:
+        mail.login(username, password)
+    except imaplib.IMAP4.error as e:
+        raise Exception(f"Login failed: {str(e)}")
     return mail
 
 # Hàm đọc email mới nhất chứa từ khóa tìm kiếm
@@ -65,12 +69,24 @@ def read_latest_email(mail, search_query=None):
 
     return None
 
-@app.route('/read_emails', methods=['POST'])
-def get_latest_email():
+# Hàm trích xuất mã xác minh từ nội dung email
+def extract_verification_code(body):
+    # Sử dụng regex để tìm chuỗi 6 chữ số
+    match = re.search(r'\b\d{6}\b', body)
+    if match:
+        return match.group(0)
+    return None
+
+# Endpoint để đọc email và trả về mã xác minh
+@app.route('/get_verification_code', methods=['POST'])
+def get_verification_code():
     data = request.json
     email_addr = data.get("email")
     password = data.get("password")
     search_query = data.get("search_query")
+
+    if not email_addr or not password:
+        return jsonify({"error": "Missing email or password."}), 400
 
     try:
         mail = connect_to_rambler(email_addr, password)
@@ -78,10 +94,11 @@ def get_latest_email():
         mail.logout()
         
         if latest_email:
-            return jsonify({
-                "latest_email": latest_email["subject"],
-                "email_body": latest_email["body"]
-            })
+            code = extract_verification_code(latest_email["body"])
+            if code:
+                return jsonify({"verification_code": code})
+            else:
+                return jsonify({"message": "No verification code found."}), 404
         else:
             return jsonify({"message": "No email found matching the query."}), 404
 
