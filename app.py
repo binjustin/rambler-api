@@ -96,7 +96,11 @@ def get_verification_code():
         if latest_email:
             code = extract_verification_code(latest_email["body"])
             if code:
-                return jsonify({"verification_code": code})
+                return jsonify({
+                    "verification_code": code,
+                    "latest_email": latest_email["subject"],
+                    "email_body": latest_email["body"]
+                })
             else:
                 return jsonify({"message": "No verification code found."}), 404
         else:
