@@ -27,36 +27,34 @@ def read_latest_email(mail, search_query=None):
     else:
         status, messages = mail.search(None, "ALL")
     
-    email_ids = messages[0].split()
+    email_ids = messages[0].split()[:10]  # Lấy 10 email mới nhất
     
     if not email_ids:
         return None
 
     for email_id in email_ids[::-1]:
         status, msg_data = mail.fetch(email_id, "(RFC822)")
-        msg = email.message_from_bytes(msg_data[0][1])
+        email_message = email.message_from_bytes(msg_data[0][1])
         
         # Giải mã chủ đề
-        subject, encoding = decode_header(msg["Subject"])[0]
+        subject, encoding = decode_header(email_message["Subject"])[0]
         if isinstance(subject, bytes):
             subject = subject.decode(encoding if encoding else "utf-8", errors='replace')
 
         body = ""
-        if msg.is_multipart():
-            for part in msg.walk():
-                # Kiểm tra loại phần
-                if part.get_content_type() == "text/plain" or part.get_content_type() == "text/html":
+        if email_message.is_multipart():
+            for part in email_message.walk():
+                if part.get_content_type() in ["text/plain", "text/html"]:
                     charset = part.get_content_charset()
                     body_bytes = part.get_payload(decode=True)
                     try:
-                        # Giải mã với charset hoặc mặc định là utf-8
                         body = body_bytes.decode(charset or "utf-8", errors='replace')
                     except Exception as e:
                         print(f"Error decoding part: {e}")
                     break
         else:
-            body_bytes = msg.get_payload(decode=True)
-            charset = msg.get_content_charset()
+            body_bytes = email_message.get_payload(decode=True)
+            charset = email_message.get_content_charset()
             try:
                 body = body_bytes.decode(charset or "utf-8", errors='replace')
             except Exception as e:
@@ -65,7 +63,8 @@ def read_latest_email(mail, search_query=None):
         if search_query and search_query in subject:
             return {
                 "subject": subject,
-                "body": body
+                "body": body,
+                "id": email_id.decode()  # Trả về ID dưới dạng chuỗi
             }
 
     return None
@@ -92,7 +91,11 @@ def extract_verification_code(body):
         return match.group(0)
     
     return None
-# Endpoint để đọc email và trả về mã xác minh
+def delete_email(mail, email_id):
+    mail.select("inbox")
+    mail.store(email_id, '+FLAGS', '\\Deleted')
+    mail.expunge()
+
 @app.route('/get_verification_code', methods=['POST'])
 def get_verification_code():
     data = request.json
@@ -106,24 +109,45 @@ def get_verification_code():
     try:
         mail = connect_to_rambler(email_addr, password)
         latest_email = read_latest_email(mail, search_query=search_query)
-        mail.logout()
         
         if latest_email:
             code = extract_verification_code(latest_email["body"])
             if code:
-                return jsonify({
+                response = {
                     "verification_code": code,
-                    "latest_email": latest_email["subject"]
-                })
+                    "latest_email": latest_email["subject"],
+                    "email_id": latest_email["id"]
+                }
+                mail.logout()
+                return jsonify(response)
             else:
+                mail.logout()
                 return jsonify({"message": "No verification code found."}), 404
         else:
+            mail.logout()
             return jsonify({"message": "No email found matching the query."}), 404
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/delete_email', methods=['POST'])
+def delete_email_route():
+    data = request.json
+    email_addr = data.get("email")
+    password = data.get("password")
+    email_id = data.get("email_id")
+
+    if not email_addr or not password or not email_id:
+        return jsonify({"error": "Missing email, password, or email_id."}), 400
+
+    try:
+        mail = connect_to_rambler(email_addr, password)
+        delete_email(mail, email_id)
+        mail.logout()
+        return jsonify({"message": "Email deleted successfully."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-

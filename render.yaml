@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: flask-email-client
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn -b 0.0.0.0:10000 -w 3 app:app"
+    envVars:
+      - key: PORT
+        value: 10000  # Port mặc định cho Render
