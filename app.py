@@ -4,7 +4,6 @@ import email
 from email.header import decode_header
 import os
 
-
 app = Flask(__name__)
 
 # Hàm kết nối đến Rambler
@@ -18,7 +17,6 @@ def connect_to_rambler(username, password):
 def read_latest_email(mail, search_query=None):
     mail.select("inbox")
     
-    # Tìm kiếm tất cả các email, hoặc email có chứa từ khóa tìm kiếm
     if search_query:
         status, messages = mail.search(None, f'(SUBJECT "{search_query}")')
     else:
@@ -26,21 +24,17 @@ def read_latest_email(mail, search_query=None):
     
     email_ids = messages[0].split()
     
-    # Nếu không tìm thấy email phù hợp
     if not email_ids:
         return None
 
-    # Duyệt qua các email từ mới nhất (email cuối cùng trong danh sách)
     for email_id in email_ids[::-1]:
         status, msg_data = mail.fetch(email_id, "(RFC822)")
         msg = email.message_from_bytes(msg_data[0][1])
         
-        # Lấy tiêu đề của email và giải mã nếu cần
         subject, encoding = decode_header(msg["Subject"])[0]
         if isinstance(subject, bytes):
             subject = subject.decode(encoding if encoding else "utf-8")
         
-        # Lấy nội dung của email
         if msg.is_multipart():
             for part in msg.walk():
                 if part.get_content_type() == "text/plain":
@@ -49,28 +43,27 @@ def read_latest_email(mail, search_query=None):
         else:
             body = msg.get_payload(decode=True).decode()
 
-        # Kiểm tra nếu email có chứa từ khóa
         if search_query in subject:
             return {
                 "subject": subject,
-                "body": body  # Trả về cả tiêu đề và nội dung email
+                "body": body
             }
 
-    return None  # Nếu không tìm thấy email nào phù hợp
+    return None
 
-# Endpoint để đọc email mới nhất chứa từ khóa
+@app.route('/')
+def home():
+    return "Welcome to the Rambler Email Reader API!"
+
 @app.route('/read_emails', methods=['POST'])
 def get_latest_email():
     data = request.json
     email_addr = data.get("email")
     password = data.get("password")
-    search_query = data.get("search_query")  # Lấy từ khóa tìm kiếm
+    search_query = data.get("search_query")
 
     try:
-        # Kết nối đến hộp thư Rambler
         mail = connect_to_rambler(email_addr, password)
-        
-        # Lấy email mới nhất chứa từ khóa
         latest_email = read_latest_email(mail, search_query=search_query)
         mail.logout()
         
@@ -86,6 +79,5 @@ def get_latest_email():
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
-    # Bind to the host and port specified by the environment variables
-    port = int(os.environ.get("PORT", 5000))  # Render sẽ cung cấp PORT
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
