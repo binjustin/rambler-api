@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 import imaplib
 import email
 from email.header import decode_header
+import os
+
 
 app = Flask(__name__)
 
@@ -84,4 +86,6 @@ def get_latest_email():
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Bind to the host and port specified by the environment variables
+    port = int(os.environ.get("PORT", 5000))  # Render sẽ cung cấp PORT
+    app.run(host='0.0.0.0', port=port, debug=True)
